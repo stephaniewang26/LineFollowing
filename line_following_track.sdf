@@ -1,0 +1,161 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <world name="line_following_track">
+
+    <!-- Lighting -->
+    <include>
+      <uri>model://sun</uri>
+    </include>
+
+    <!-- Black ground plane -->
+    <model name="black_ground">
+      <static>true</static>
+      <link name="ground_link">
+        <visual name="ground_visual">
+          <geometry>
+            <box>
+              <size>25 25 0.01</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0 0 0 1</ambient>
+            <diffuse>0 0 0 1</diffuse>
+          </material>
+          <pose>0 0 -0.005 0 0 0</pose>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Oval track: white line segments -->
+    <!-- Straight segments -->
+    <model name="track_straight_1">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box><size>5 0.1 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+          <pose>-2.5 0 0.005 0 0 0</pose>
+        </visual>
+      </link>
+    </model>
+
+    <model name="track_straight_2">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box><size>5 0.1 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+          <pose>2.5 0 0.005 0 0 0</pose>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Curved segments (simulated bends using rotated boxes) -->
+    <model name="track_curve_1">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box><size>1.7 0.1 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+          <pose>-3.8 1.3 0.005 0 0 1.57</pose>
+        </visual>
+      </link>
+    </model>
+
+    <model name="track_curve_2">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box><size>1.7 0.1 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+          <pose>-1.3 2.3 0.005 0 0 0.78</pose>
+        </visual>
+      </link>
+    </model>
+
+    <model name="track_curve_3">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box><size>1.7 0.1 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+          <pose>1.3 2.3 0.005 0 0 -0.78</pose>
+        </visual>
+      </link>
+    </model>
+
+    <model name="track_curve_4">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box><size>1.7 0.1 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+          <pose>3.8 1.3 0.005 0 0 -1.57</pose>
+        </visual>
+      </link>
+    </model>
+
+    <model name="track_curve_5">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box><size>1.7 0.1 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+          <pose>1.3 -2.3 0.005 0 0 0.78</pose>
+        </visual>
+      </link>
+    </model>
+
+    <model name="track_curve_6">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <box><size>1.7 0.1 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+          </material>
+          <pose>-1.3 -2.3 0.005 0 0 -0.78</pose>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
