@@ -250,6 +250,9 @@ class LineController(Node):
     def timer_callback(self) -> None:
         """Callback function for the timer."""
         self.publish_offboard_control_heartbeat_signal()
+
+        if self.offboard_setpoint_counter == 100:
+            return
         
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
@@ -258,8 +261,7 @@ class LineController(Node):
         if self.vehicle_local_position.z > self.takeoff_height:
             self.publish_trajectory_setpoint(0.0, 0.0, -1.0, 0.0)
 
-        if self.offboard_setpoint_counter < 11:
-            self.offboard_setpoint_counter += 1
+        self.offboard_setpoint_counter += 1
     
     def line_sub_cb(self, param):
         """
