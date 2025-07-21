@@ -235,9 +235,6 @@ class LineController(Node):
             self.engage_offboard_mode()
             self.arm()
 
-        if self.offboard_setpoint_counter >= 10:
-            return
-
         if self.vehicle_local_position.z > self.takeoff_height:
             self.publish_trajectory_setpoint(0.0, 0.0, -1.0, 0.0)
 
