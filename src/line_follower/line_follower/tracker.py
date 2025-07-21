@@ -19,7 +19,7 @@ IMAGE_HEIGHT = 128
 IMAGE_WIDTH = 128
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
 EXTEND = None # Number of pixels forward to extrapolate the line
-KP_X = 0.0
+KP_X = 1.0
 KP_Y = 0.0
 KP_Z = 1.0
 KP_Z_W = 1.0
@@ -235,7 +235,8 @@ class LineController(Node):
             self.engage_offboard_mode()
             self.arm()
 
-        self.publish_trajectory_setpoint(0.0, 0.0, -1.0, 0.0)
+        if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD and self.offboard_setpoint_counter >= 10 and self.offboard_setpoint_counter < 50:
+            self.publish_trajectory_setpoint(0.0, 0.0, -1.0, 0.0)
 
         if self.offboard_setpoint_counter < 11:
             self.offboard_setpoint_counter += 1
