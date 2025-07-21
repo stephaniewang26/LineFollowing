@@ -65,6 +65,19 @@ class LineDetector(Node):
             # Publish param msg
             self.param_pub.publish(msg)
 
+        # Publish annotated image if DISPLAY is True and a line was detected
+        if DISPLAY and line is not None:
+            # Draw the detected line on a color version of the image
+            annotated = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+            x, y, vx, vy = line
+            pt1 = (int(x - 100*vx), int(y - 100*vy))
+            pt2 = (int(x + 100*vx), int(y + 100*vy))
+            cv2.line(annotated, pt1, pt2, (0, 0, 255), 2)
+            cv2.circle(annotated, (int(x), int(y)), 5, (0, 255, 0), -1)
+            # Convert to ROS Image message and publish
+            annotated_msg = self.bridge.cv2_to_imgmsg(annotated, "bgr8")
+            self.detector_image_pub.publish(annotated_msg)
+
     ##########
     # DETECT #
     ##########
