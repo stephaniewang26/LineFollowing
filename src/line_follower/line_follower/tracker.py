@@ -297,7 +297,7 @@ class LineController(Node):
         self.vz__dc = KP_Z * error_z
 
         # Get angle between x-axis and line direction
-        forward = np.array([0.0, 1.0])
+        forward = np.array([1.0, 0.0])
         angle = math.atan2(line_dir[1], line_dir[0])
         angle_error = math.atan2(forward[1], forward[0]) - angle
 
