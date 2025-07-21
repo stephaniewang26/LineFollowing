@@ -19,9 +19,9 @@ IMAGE_HEIGHT = 128
 IMAGE_WIDTH = 128
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
 EXTEND = None # Number of pixels forward to extrapolate the line
-KP_X = 1.0
-KP_Y = 0.0
-KP_Z = 1.0
+KP_X = 5.0
+KP_Y = 5.0
+KP_Z = 5.0
 KP_Z_W = 1.0
 DISPLAY = True
 
@@ -230,10 +230,13 @@ class LineController(Node):
     def timer_callback(self) -> None:
         """Callback function for the timer."""
         self.publish_offboard_control_heartbeat_signal()
-
+        
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
             self.arm()
+
+        if self.offboard_setpoint_counter >= 10:
+            return
 
         if self.vehicle_local_position.z > self.takeoff_height:
             self.publish_trajectory_setpoint(0.0, 0.0, -1.0, 0.0)
