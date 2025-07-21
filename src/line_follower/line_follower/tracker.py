@@ -110,7 +110,7 @@ class LineController(Node):
         self.vehicle_status_subscriber = self.create_subscription(
             VehicleStatus, '/fmu/out/vehicle_status', self.vehicle_status_callback, qos_profile)
         self.line_sub = self.create_subscription(
-            Line, '/line/param', self.line_sub_cb, qos_profile)
+            Line, '/line/param', self.line_sub_cb, 1)
 
         # Initialize variables
         self.offboard_setpoint_counter = 0
