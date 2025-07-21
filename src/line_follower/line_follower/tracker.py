@@ -251,9 +251,7 @@ class LineController(Node):
             Args:
                 - param: parameters that define the center and direction of detected line
         """
-        if self.offboard_setpoint_counter < 11:
-            return
-
+        print("Following line")
         # Extract line parameters
         x, y, vx, vy = param.x, param.y, param.vx, param.vy
         line_point = np.array([x, y])
