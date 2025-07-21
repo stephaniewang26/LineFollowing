@@ -36,7 +36,27 @@ class CoordTransforms():
                                   'R_dc2bu','R_dc2bd','R_dc2dc','R_dc2fc',
                                   'R_fc2bu','R_fc2bd','R_fc2dc','R_fc2fc'}
 
-        # ... (rotation matrices as before) ...
+        # Example: Identity matrices for all transforms (replace with actual rotation matrices as needed)
+        self.R_dc2bu = np.identity(4)
+        self.R_dc2bd = np.identity(4)
+        self.R_dc2dc = np.identity(4)
+        self.R_dc2fc = np.identity(4)
+        self.R_bu2bu = np.identity(4)
+        self.R_bu2bd = np.identity(4)
+        self.R_bu2dc = np.identity(4)
+        self.R_bu2fc = np.identity(4)
+        self.R_bd2bu = np.identity(4)
+        self.R_bd2bd = np.identity(4)
+        self.R_bd2dc = np.identity(4)
+        self.R_bd2fc = np.identity(4)
+        self.R_fc2bu = np.identity(4)
+        self.R_fc2bd = np.identity(4)
+        self.R_fc2dc = np.identity(4)
+        self.R_fc2fc = np.identity(4)
+        self.R_lenu2lenu = np.identity(4)
+        self.R_lenu2lned = np.identity(4)
+        self.R_lned2lenu = np.identity(4)
+        self.R_lned2lned = np.identity(4)
 
     def quaternion_matrix(self, q):
         """Return homogeneous rotation matrix from quaternion."""
