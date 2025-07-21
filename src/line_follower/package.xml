@@ -9,7 +9,7 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>px4_msgs</exec_depend>
-  <exec_depend>fizzbuzz_interfaces</exec_depend>
+  <exec_depend>line_interfaces</exec_depend>
   <exec_depend>ros2launch</exec_depend>
 
   <test_depend>ament_copyright</test_depend>

@@ -10,7 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  msg/FizzBuzz.msg  
+  msg/Line.msg  
 ) 
 # uncomment the following section in order to fill in
 # further dependencies manually.
