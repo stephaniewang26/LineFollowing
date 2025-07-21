@@ -22,7 +22,7 @@ EXTEND = 25 # Number of pixels forward to extrapolate the line
 KP_X = 3.0
 KP_Y = 0.0
 KP_Z = 3.0
-KP_Z_W = 0.0
+KP_Z_W = 3.0
 DISPLAY = True
 
 class CoordTransforms():
