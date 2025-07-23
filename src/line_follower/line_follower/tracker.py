@@ -14,15 +14,15 @@ from line_interfaces.msg import Line
 _RATE = 10 # (Hz) rate for rospy.rate
 _MAX_SPEED = 1.0 # (m/s)
 _MAX_CLIMB_RATE = 1.0 # m/s
-_MAX_ROTATION_RATE = 2.0 # rad/s 
+_MAX_ROTATION_RATE = 3.0 # rad/s 
 IMAGE_HEIGHT = 128
 IMAGE_WIDTH = 128
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
-EXTEND = 50 # Number of pixels forward to extrapolate the line
-KP_X = 0.01
-KP_Y = 0.01
-KP_Z = 1.0
-KP_Z_W = 1.0
+EXTEND = 100 # Number of pixels forward to extrapolate the line
+KP_X = 0.1
+KP_Y = 0.1
+KP_Z = 0.5
+KP_Z_W = 1.5
 DISPLAY = True
 
 class CoordTransforms():
@@ -136,7 +136,7 @@ class LineController(Node):
         self.offboard_setpoint_counter = 0
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
-        self.takeoff_height = -3.0
+        self.takeoff_height = -2.0
 
         # Linear setpoint velocities in downward camera frame
         self.vx__dc = 0.0
@@ -186,10 +186,10 @@ class LineController(Node):
     def publish_offboard_control_heartbeat_signal(self):
         """Publish the offboard control mode."""
         msg = OffboardControlMode()
-        msg.position = True
-        msg.velocity = False
+        msg.position = False
+        msg.velocity = True
         msg.acceleration = False
-        msg.attitude = False
+        msg.attitude = True
         msg.body_rate = False
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.offboard_control_mode_publisher.publish(msg)
@@ -197,7 +197,9 @@ class LineController(Node):
     def publish_trajectory_setpoint(self, vx: float, vy: float, vz: float, wz: float) -> None:
         """Publish the trajectory setpoint."""
         msg = TrajectorySetpoint()
+        msg.position = [None, None, None]
         msg.velocity = [vx, vy, vz]
+        msg.acceleration = [None, None, None]
         msg.yawspeed = wz
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
@@ -223,12 +225,6 @@ class LineController(Node):
         self.vehicle_command_publisher.publish(msg)
 
     def convert_velocity_setpoints(self):
-        """
-        Continually publishes Twist commands in the local lenu reference frame.
-        """
-
-        # Create velocity setpoint
-
         # Set linear velocity (convert command velocity from downward camera frame to lenu)
         vx, vy, vz = coord_transforms.get_v__lenu((self.vx__dc, self.vy__dc, self.vz__dc), 
                                                     'dc', self.quat_bu_lenu)
@@ -258,8 +254,7 @@ class LineController(Node):
             self.engage_offboard_mode()
             self.arm()
 
-        if self.vehicle_local_position.z > self.takeoff_height:
-            self.publish_trajectory_setpoint(0.0, 0.0, -1.0, 0.0)
+        self.publish_trajectory_setpoint(0, 0, -2.0, 0.0)
 
         self.offboard_setpoint_counter += 1
     
@@ -273,6 +268,8 @@ class LineController(Node):
             Args:
                 - param: parameters that define the center and direction of detected line
         """
+        if self.offboard_setpoint_counter < 100:
+            return
         print("Following line")
         # Extract line parameters
         x, y, vx, vy = param.x, param.y, param.vx, param.vy
@@ -299,7 +296,7 @@ class LineController(Node):
         self.vz__dc = KP_Z * error_z
 
         # Get angle between x-axis and line direction
-        forward = np.array([0.0, 1.0])
+        forward = np.array([1.0, 0.0])
         angle = math.atan2(line_dir[1], line_dir[0])
         angle_error = math.atan2(forward[1], forward[0]) - angle
 
@@ -307,6 +304,7 @@ class LineController(Node):
         self.wz__dc = KP_Z_W * angle_error
 
         self.publish_trajectory_setpoint(*self.convert_velocity_setpoints())
+        # self.publish_trajectory_setpoint(*[0.5, 0.0, -5.0, 0.0])
 
 
 def main(args=None) -> None:
