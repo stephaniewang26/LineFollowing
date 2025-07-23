@@ -20,9 +20,9 @@ IMAGE_HEIGHT = 960
 IMAGE_WIDTH = 1280
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
 EXTEND = 300 # Number of pixels forward to extrapolate the line
-KP_X = 0.015
-KP_Y = 0.015
-KP_Z_W = 0.5
+KP_X = None
+KP_Y = None
+KP_Z_W = None # Proportional gains for x, y, and angular velocity control
 DISPLAY = True
 
 #########################
@@ -331,6 +331,15 @@ class LineController(Node):
         self.wz__dc = KP_Z_W * angle_error
         self.publish_trajectory_setpoint(*self.convert_velocity_setpoints())
 
+        """
+        TODO: Implement logic to set a target on the line given a point and tangent vector.
+        TODO: Find the error between the target and the center of the image.
+        TODO: Set linear velocity in the downward camera frame (self.vx__dc, self.vy__dc) based on the error. (hint: use KP_X and KP_Y)
+        TODO: Find the error between the forward direction of the drone and the line direction.
+        TODO: Set angular velocity in the downward camera frame (self.wz__dc) based on the error. (hint: use KP_Z_W)
+        TODO: Convert downward camera frame velocities to body down frame velocities (use self.convert_velocity_setpoints())
+        TODO: Publish the trajectory setpoint with the converted velocities (use self.publish_trajectory_setpoint)
+        """
 
 def main(args=None) -> None:
     print('Starting offboard control node...')

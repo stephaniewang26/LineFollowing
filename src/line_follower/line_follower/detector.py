@@ -93,46 +93,11 @@ class LineDetector(Node):
             in downward camera pixel coordinates. Returns None if no line is found
         """
 
-        '''TODO-START: FILL IN CODE HERE '''
-        # Threshold image to get white line (assume white is high value)
-        if LOW is None or HI is None:
-            # Default to 200-255 for white
-            low = 200
-            hi = 255
-        else:
-            low = LOW
-            hi = HI
-
-        thresh = cv2.inRange(image, low, hi)
-        # Morphological operations to clean up noise
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, KERNEL)
-
-        # Find contours
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return None
-
-        # Find largest contour
-        largest = max(contours, key=cv2.contourArea)
-        if LENGTH_THRESH is not None and cv2.arcLength(largest, False) < LENGTH_THRESH:
-            return None
-
-        # Fit line to largest contour
-        if len(largest) < 2:
-            return None
-
-        [vx, vy, x, y] = cv2.fitLine(largest, cv2.DIST_L2, 0, 0.01, 0.01)
-        # vx, vy are normalized direction vector; x, y is a point on the line
-
-        # Convert to float
-        x = float(x)
-        y = float(y)
-        vx = float(vx)
-        vy = float(vy)
-
-        return (x, y, vx, vy)
-        '''TODO-END '''
-
+        '''
+        TODO: Implement computer vision to detect a line (look back at last week's labs)
+        TODO: Retrieve x, y pixel coordinates and vx, vy collinear vector from the detected line (look at cv2.fitLine)
+        TODO: Populate the Line custom message and publish it to the topic '/line/param'
+        '''
 def main(args=None):
     rclpy.init(args=args)
     detector = LineDetector()
