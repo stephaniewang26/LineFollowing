@@ -404,6 +404,8 @@ class LineController(Node):
         line_point = np.array([x, y])
         line_dir = np.array([vx, vy])
         line_dir = line_dir / np.linalg.norm(line_dir)  # Ensure unit vector
+        if line_dir[1] > 0:
+            line_dir = -line_dir  # Flip direction to point "up" in the image
 
         # Find closest point on the line to the image center
         center = CENTER
