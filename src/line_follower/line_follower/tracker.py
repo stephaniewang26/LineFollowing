@@ -315,7 +315,7 @@ class LineController(Node):
         msg.position = True
         msg.velocity = True
         msg.acceleration = False
-        msg.attitude = False
+        msg.attitude = True
         msg.body_rate = False
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.offboard_control_mode_publisher.publish(msg)
@@ -327,9 +327,9 @@ class LineController(Node):
         if self.offboard_setpoint_counter < 100:
             msg.velocity = [0.0, 0.0, 0.0]
         else:
-            msg.velocity = [vx, vy, 0]
+            msg.velocity = [vx, vy, None]
         msg.acceleration = [None, None, None]
-        # msg.yawspeed = None
+        msg.yawspeed = wz
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
         self.get_logger().info(f"Publishing velocity setpoints {[vx, vy, wz]}")
