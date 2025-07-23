@@ -52,7 +52,7 @@ class LineDetector(Node):
             Args: 
                 - msg = ROS Image message
         """
-        # Convert Image msg to and OpenCV image
+        # Convert Image msg to OpenCV image
         image = self.bridge.imgmsg_to_cv2(msg, "mono8")
 
         # Detect line in the image. detect returns a parameterize the line (if one exists)

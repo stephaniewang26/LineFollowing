@@ -13,16 +13,16 @@ import tf_transformations as tft
 # CONSTANTS #
 #############
 _RATE = 10 # (Hz) rate for rospy.rate
-_MAX_SPEED = 1.0 # (m/s)
+_MAX_SPEED = 1.5 # (m/s)
 _MAX_CLIMB_RATE = 1.0 # m/s
-_MAX_ROTATION_RATE = 3.0 # rad/s 
-IMAGE_HEIGHT = 128
-IMAGE_WIDTH = 128
+_MAX_ROTATION_RATE = 5.0 # rad/s 
+IMAGE_HEIGHT = 960
+IMAGE_WIDTH = 1280
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
-EXTEND = 100 # Number of pixels forward to extrapolate the line
-KP_X = 0.1
-KP_Y = 0.1
-KP_Z_W = 1.0
+EXTEND = 300 # Number of pixels forward to extrapolate the line
+KP_X = 0.015
+KP_Y = 0.015
+KP_Z_W = 0.5
 DISPLAY = True
 
 #########################
@@ -92,62 +92,13 @@ class CoordTransforms():
                                   'R_fc2dc',
                                   'R_fc2fc'
                                   }
-
-        ######################
-        # ROTATION MATRICIES #
-        ######################
        
-        # local ENU -> local NED | local NED -> local NED 
-        self.R_lenu2lned = self.R_lned2lenu = np.array([[0.0, 1.0, 0.0, 0.0],
-                                                        [1.0, 0.0, 0.0, 0.0],
-                                                        [0.0, 0.0,-1.0, 0.0],
-                                                        [0.0, 0.0, 0.0, 0.0]])
-       
-    
-        # body up -> body down | body down -> body up | body up -> downward camera | downward camera -> body up 
-        self.R_bu2bd = self.R_bd2bu = self.R_bu2dc = self.R_dc2bu = np.array([[1.0, 0.0, 0.0, 0.0],
-                                                                              [0.0,-1.0, 0.0, 0.0],
-                                                                              [0.0, 0.0,-1.0, 0.0],
-                                                                              [0.0, 0.0, 0.0, 0.0]])
-    
-    
-        # self -> self (identity matrix) | downward camera -> body down | body down -> downward camera
-        self.R_lenu2lenu = self.R_lned2lned = self.R_bu2bu = self.R_bd2bd = self.R_dc2dc = self.R_fc2fc = self.R_bd2dc = np.array([[1.0, 0.0, 0.0, 0.0],
-                                                                                                                                                  [0.0, 1.0, 0.0, 0.0],
-                                                                                                                                                  [0.0, 0.0, 1.0, 0.0],
-                                                                                                                                                  [0.0, 0.0, 0.0, 0.0]])
-        
         self.R_dc2bd = np.array([
-            [0.0, -1.0, 0.0, 0.0],  # bd.x = -dc.y
+            [0.0, -1.0, 0.0, 0.0], # bd.x = -dc.y
             [1.0, 0.0, 0.0, 0.0],  # bd.y = dc.x
             [0.0, 0.0, 1.0, 0.0],  # bd.z = dc.z
             [0.0, 0.0, 0.0, 0.0]
         ])
-    
-        # body up -> forward camera 
-        self.R_bu2fc = np.array([[0.0,-1.0, 0.0, 0.0],
-                                 [0.0, 0.0,-1.0, 0.0],
-                                 [1.0, 0.0, 0.0, 0.0],
-                                 [0.0, 0.0, 0.0, 0.0]])
-    
-        # forward camera -> body up
-        self.R_fc2bu = np.array([[ 0.0, 0.0, 1.0, 0.0],
-                                 [-1.0, 0.0, 0.0, 0.0],
-                                 [ 0.0,-1.0, 0.0, 0.0],
-                                 [ 0.0, 0.0, 0.0, 0.0]])
-
-
-        # body down -> forward camera | downward camera -> forward camera
-        self.R_bd2fc = self.R_dc2fc = np.array([[0.0, 1.0, 0.0, 0.0],
-                                                [0.0, 0.0, 1.0, 0.0],
-                                                [1.0, 0.0, 0.0, 0.0],
-                                                [0.0, 0.0, 0.0, 0.0]])
-    
-        # forward camera -> body down | forward camera -> downward camera
-        self.R_fc2bd = self.R_fc2dc = np.array([[0.0, 0.0, 1.0, 0.0],
-                                                [1.0, 0.0, 0.0, 0.0],
-                                                [0.0, 1.0, 0.0, 0.0],
-                                                [0.0, 0.0, 0.0, 0.0]])
     
     
     def static_transform(self, v__fin, fin, fout):
@@ -191,55 +142,12 @@ class CoordTransforms():
         return (v4__fout[0,0], v4__fout[1,0], v4__fout[2,0])
 
 
-    def get_v__lenu(self, v__fin, fin, q_bu_lenu):
-        """
-        Given a vector expressed in frame fin, returns the same vector expressed in the local ENU frame. q_bu_lene
-        is the quaternion defining the rotation from the local ENU frame to the body up frame.
-                
-            Args:
-                - v__fin: 3D vector, (x, y, z), represented in fin coordinates 
-                - fin: string describing input coordinate frame 
-                - q_bu_lenu: quaternion defining the rotation from local ENU frame to the body up frame. Quaternions ix+jy+kz+w are represented as (x, y, z, w)
-            
-            Returns:
-                - v__lenu: 3D vector, (x, y, z), represented in local ENU world frame
-        """
-        # Check if fin is a valid coordinate frame
-        if fin not in self.COORDINATE_FRAMES:
-            raise AttributeError('{} is not a valid coordinate frame'.format(fin))
-
-        # Transformations from one world frame to another can be down with a static transform
-        if fin in self.WORLD_FRAMES:
-            return self.static_transform(v__fin, fin, 'lenu')
-
-        # Transformtion from body frame to world frame 
-        elif fin in self.BODY_FRAMES:
-            # Convert vector v__fin to the body up frame
-            v__bu = self.static_transform(v__fin, fin, 'bu')
-
-            # Create a 4x1 np.array representation of v__bu for matrix multiplication
-            v4__bu = np.array([[v__bu[0]],
-                                [v__bu[1]],
-                                [v__bu[2]],
-                                [     0.0]])
-
-            # Create rotation matrix from the quaternion
-            R_bu2lenu = tft.quaternion_matrix(q_bu_lenu)
-
-            # Perform transformation from v__bu to v__lenu
-            v4__lenu = np.dot(R_bu2lenu, v4__bu)
-        
-            return (v4__lenu[0,0], v4__lenu[1,0], v4__lenu[2,0])
-
-#########################
-# COORDINATE TRANSFORMS #
-#########################
-# Create CoordTransforms instance
-coord_transforms = CoordTransforms()
-
 class LineController(Node):
     def __init__(self) -> None:
         super().__init__('line_controller')
+
+        # Create CoordTransforms instance
+        self.coord_transforms = CoordTransforms()
 
         # Configure QoS profile for publishing and subscribing
         qos_profile = QoSProfile(
@@ -322,8 +230,8 @@ class LineController(Node):
         msg.position = True
         msg.velocity = True
         msg.acceleration = False
-        msg.attitude = True
-        msg.body_rate = False
+        msg.attitude = False
+        msg.body_rate = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.offboard_control_mode_publisher.publish(msg)
 
@@ -334,12 +242,12 @@ class LineController(Node):
         if self.offboard_setpoint_counter < 100:
             msg.velocity = [0.0, 0.0, 0.0]
         else:
-            msg.velocity = [vx, vy, None]
+            msg.velocity = [vx, vy, 0.0]
         msg.acceleration = [None, None, None]
         msg.yawspeed = wz
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
-        self.get_logger().info(f"Publishing velocity setpoints {[vx, vy, wz]}")
+        # self.get_logger().info(f"Publishing velocity setpoints {[vx, vy, wz]}")
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""
@@ -362,17 +270,16 @@ class LineController(Node):
 
     def convert_velocity_setpoints(self):
         # Set linear velocity (convert command velocity from downward camera frame to bd frame)
-        vx, vy, vz = coord_transforms.static_transform((self.vx__dc, self.vy__dc, self.vz__dc), 'dc', 'bd')
+        vx, vy, vz = self.coord_transforms.static_transform((self.vx__dc, self.vy__dc, self.vz__dc), 'dc', 'bd')
 
         # Set angular velocity (convert command angular velocity from downward camera to bd frame)
-        _, _, wz = coord_transforms.static_transform((0.0, 0.0, self.wz__dc), 'dc', 'bd')
+        _, _, wz = self.coord_transforms.static_transform((0.0, 0.0, self.wz__dc), 'dc', 'bd')
 
         # enforce safe velocity limits
         if _MAX_SPEED < 0.0 or _MAX_CLIMB_RATE < 0.0 or _MAX_ROTATION_RATE < 0.0:
             raise Exception("_MAX_SPEED,_MAX_CLIMB_RATE, and _MAX_ROTATION_RATE must be positive")
         vx = min(max(vx,-_MAX_SPEED), _MAX_SPEED)
         vy = min(max(vy,-_MAX_SPEED), _MAX_SPEED)
-        # vz = min(max(vz,-_MAX_CLIMB_RATE), _MAX_CLIMB_RATE)
         wz = min(max(wz,-_MAX_ROTATION_RATE), _MAX_ROTATION_RATE)
 
         return (vx, vy, wz)
@@ -404,28 +311,19 @@ class LineController(Node):
         line_point = np.array([x, y])
         line_dir = np.array([vx, vy])
         line_dir = line_dir / np.linalg.norm(line_dir)  # Ensure unit vector
-        if line_dir[1] > 0:
-            line_dir = -line_dir  # Flip direction to point "up" in the image
-
-        # Find closest point on the line to the image center
-        center = CENTER
-        to_center = center - line_point
-        proj_length = np.dot(to_center, line_dir)
-        closest = line_point + proj_length * line_dir
 
         # Target point EXTEND pixels ahead along the line direction
-        target = closest + EXTEND * line_dir
+        target = line_point + EXTEND * line_dir
 
         # Error between center and target
-        error = target - center
-        error_z = self.takeoff_height - self.vehicle_local_position.z
+        error = target - CENTER
 
         # Set linear velocities (downward camera frame)
         self.vx__dc = KP_X * error[0]
         self.vy__dc = KP_Y * error[1]
 
-        # Get angle between x-axis and line direction
-        forward = np.array([1.0, 0.0])
+        # Get angle between y-axis and line direction
+        forward = np.array([0.0, 1.0])
         angle = math.atan2(line_dir[1], line_dir[0])
         angle_error = math.atan2(forward[1], forward[0]) - angle
 
