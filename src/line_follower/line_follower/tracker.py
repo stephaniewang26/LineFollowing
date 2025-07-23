@@ -22,8 +22,7 @@ CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame
 EXTEND = 100 # Number of pixels forward to extrapolate the line
 KP_X = 0.1
 KP_Y = 0.1
-KP_Z = 0.5
-KP_Z_W = 1.5
+KP_Z_W = 1.0
 DISPLAY = True
 
 #########################
@@ -263,7 +262,7 @@ class LineController(Node):
         self.offboard_setpoint_counter = 0
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
-        self.takeoff_height = -2.0
+        self.takeoff_height = -3.0
 
         # Linear setpoint velocities in downward camera frame
         self.vx__dc = 0.0
@@ -313,24 +312,27 @@ class LineController(Node):
     def publish_offboard_control_heartbeat_signal(self):
         """Publish the offboard control mode."""
         msg = OffboardControlMode()
-        msg.position = False
+        msg.position = True
         msg.velocity = True
         msg.acceleration = False
-        msg.attitude = True
+        msg.attitude = False
         msg.body_rate = False
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.offboard_control_mode_publisher.publish(msg)
 
-    def publish_trajectory_setpoint(self, vx: float, vy: float, vz: float, wz: float) -> None:
+    def publish_trajectory_setpoint(self, vx: float, vy: float, wz: float) -> None:
         """Publish the trajectory setpoint."""
         msg = TrajectorySetpoint()
-        msg.position = [None, None, None]
-        msg.velocity = [vx, vy, vz]
+        msg.position = [None, None, self.takeoff_height]
+        if self.offboard_setpoint_counter < 100:
+            msg.velocity = [0.0, 0.0, 0.0]
+        else:
+            msg.velocity = [vx, vy, 0]
         msg.acceleration = [None, None, None]
-        msg.yawspeed = wz
+        # msg.yawspeed = None
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
-        self.get_logger().info(f"Publishing velocity setpoints {[vx, vy, vz, wz]}")
+        self.get_logger().info(f"Publishing velocity setpoints {[vx, vy, wz]}")
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""
@@ -365,23 +367,19 @@ class LineController(Node):
             raise Exception("_MAX_SPEED,_MAX_CLIMB_RATE, and _MAX_ROTATION_RATE must be positive")
         vx = min(max(vx,-_MAX_SPEED), _MAX_SPEED)
         vy = min(max(vy,-_MAX_SPEED), _MAX_SPEED)
-        vz = min(max(vz,-_MAX_CLIMB_RATE), _MAX_CLIMB_RATE)
+        # vz = min(max(vz,-_MAX_CLIMB_RATE), _MAX_CLIMB_RATE)
         wz = min(max(wz,-_MAX_ROTATION_RATE), _MAX_ROTATION_RATE)
 
-        return (vx, vy, vz, wz)
+        return (vx, vy, wz)
     
     def timer_callback(self) -> None:
         """Callback function for the timer."""
-        self.publish_offboard_control_heartbeat_signal()
 
-        if self.offboard_setpoint_counter == 100:
-            return
+        self.publish_offboard_control_heartbeat_signal()
         
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
             self.arm()
-
-        self.publish_trajectory_setpoint(0, 0, -2.0, 0.0)
 
         self.offboard_setpoint_counter += 1
     
@@ -395,8 +393,6 @@ class LineController(Node):
             Args:
                 - param: parameters that define the center and direction of detected line
         """
-        if self.offboard_setpoint_counter < 100:
-            return
         print("Following line")
         # Extract line parameters
         x, y, vx, vy = param.x, param.y, param.vx, param.vy
@@ -420,7 +416,6 @@ class LineController(Node):
         # Set linear velocities (downward camera frame)
         self.vx__dc = KP_X * error[0]
         self.vy__dc = KP_Y * error[1]
-        self.vz__dc = KP_Z * error_z
 
         # Get angle between x-axis and line direction
         forward = np.array([1.0, 0.0])
@@ -429,9 +424,7 @@ class LineController(Node):
 
         # Set angular velocity (yaw)
         self.wz__dc = KP_Z_W * angle_error
-
         self.publish_trajectory_setpoint(*self.convert_velocity_setpoints())
-        # self.publish_trajectory_setpoint(*[0.5, 0.0, -5.0, 0.0])
 
 
 def main(args=None) -> None:
