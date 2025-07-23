@@ -112,10 +112,17 @@ class CoordTransforms():
     
     
         # self -> self (identity matrix) | downward camera -> body down | body down -> downward camera
-        self.R_lenu2lenu = self.R_lned2lned = self.R_bu2bu = self.R_bd2bd = self.R_dc2dc = self.R_fc2fc = self.R_dc2bd = self.R_bd2dc = np.array([[1.0, 0.0, 0.0, 0.0],
+        self.R_lenu2lenu = self.R_lned2lned = self.R_bu2bu = self.R_bd2bd = self.R_dc2dc = self.R_fc2fc = self.R_bd2dc = np.array([[1.0, 0.0, 0.0, 0.0],
                                                                                                                                                   [0.0, 1.0, 0.0, 0.0],
                                                                                                                                                   [0.0, 0.0, 1.0, 0.0],
                                                                                                                                                   [0.0, 0.0, 0.0, 0.0]])
+        
+        self.R_dc2bd = np.array([
+            [0.0, 1.0, 0.0, 0.0],  # bd.x = dc.y
+            [1.0, 0.0, 0.0, 0.0],  # bd.y = dc.x
+            [0.0, 0.0, 1.0, 0.0],  # bd.z = dc.z
+            [0.0, 0.0, 0.0, 0.0]
+        ])
     
         # body up -> forward camera 
         self.R_bu2fc = np.array([[0.0,-1.0, 0.0, 0.0],
