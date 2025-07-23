@@ -354,13 +354,11 @@ class LineController(Node):
         self.vehicle_command_publisher.publish(msg)
 
     def convert_velocity_setpoints(self):
-        # Set linear velocity (convert command velocity from downward camera frame to lenu)
-        vx, vy, vz = coord_transforms.get_v__lenu((self.vx__dc, self.vy__dc, self.vz__dc), 
-                                                    'dc', self.quat_bu_lenu)
+        # Set linear velocity (convert command velocity from downward camera frame to bd frame)
+        vx, vy, vz = coord_transforms.static_transform((self.vx__dc, self.vy__dc, self.vz__dc), 'dc', 'bd')
 
-        # Set angular velocity (convert command angular velocity from downward camera to lenu)
-        _, _, wz = coord_transforms.get_v__lenu((0.0, 0.0, self.wz__dc), 
-                                                'dc', self.quat_bu_lenu)
+        # Set angular velocity (convert command angular velocity from downward camera to bd frame)
+        _, _, wz = coord_transforms.static_transform((0.0, 0.0, self.wz__dc), 'dc', 'bd')
 
         # enforce safe velocity limits
         if _MAX_SPEED < 0.0 or _MAX_CLIMB_RATE < 0.0 or _MAX_ROTATION_RATE < 0.0:
