@@ -7,7 +7,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
 from line_interfaces.msg import Line
-import tf_transformations as tft
+import transformations as tft
 
 #############
 # CONSTANTS #
@@ -20,9 +20,9 @@ IMAGE_HEIGHT = 960
 IMAGE_WIDTH = 1280
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
 EXTEND = 300 # Number of pixels forward to extrapolate the line
-KP_X = None
-KP_Y = None
-KP_Z_W = None # Proportional gains for x, y, and angular velocity control
+KP_X = 0.8
+KP_Y = 0.8
+KP_Z_W = 0.8 # Proportional gains for x, y, and angular velocity control
 DISPLAY = True
 
 #########################

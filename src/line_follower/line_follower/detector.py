@@ -16,9 +16,9 @@ import sys
 #############
 # CONSTANTS #
 #############
-LOW = None  # Lower image thresholding bound
-HI = None   # Upper image thresholding bound
-LENGTH_THRESH = None  # If the length of the largest contour is less than LENGTH_THRESH, we will not consider it a line
+LOW = 0  # Lower image thresholding bound
+HI = 255   # Upper image thresholding bound
+LENGTH_THRESH = 0  # If the length of the largest contour is less than LENGTH_THRESH, we will not consider it a line
 KERNEL = np.ones((5, 5), np.uint8)
 DISPLAY = True
 
@@ -61,7 +61,7 @@ class LineDetector(Node):
         # If a line was detected, publish the parameterization to the topic '/line/param'
         if line is not None:
             msg = Line()
-            msg.x, msg.y, msg.vx, msg.vy = line
+            msg.x, msg.y, msg.vx, msg.vy = float(line[0]), float(line[1]), float(line[2]), float(line[3])
             # Publish param msg
             self.param_pub.publish(msg)
 
@@ -98,6 +98,29 @@ class LineDetector(Node):
         TODO: Retrieve x, y pixel coordinates and vx, vy collinear vector from the detected line (look at cv2.fitLine)
         TODO: Populate the Line custom message and publish it to the topic '/line/param'
         '''
+        #dilate
+        imgray = image.copy()
+        imgray = cv2.dilate(imgray,KERNEL,iterations = 1)
+
+        #binary threshold and find contours
+        ret, thresh = cv2.threshold(imgray, LOW, HI, cv2.THRESH_BINARY)
+        contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        if not contours:
+            print("No contours found")
+            return None
+
+        max_contour = max(contours, key=lambda c: max(cv2.boundingRect(c)[2:4]))
+
+        if max(cv2.boundingRect(max_contour)[2:4]) < LENGTH_THRESH:
+            print("Largest contour too small")
+            return None
+
+        [vx,vy,x,y] = cv2.fitLine(max_contour, cv2.DIST_L2,0,0.01,0.01)
+
+        return (x, y, vx, vy)
+
+
 def main(args=None):
     rclpy.init(args=args)
     detector = LineDetector()
