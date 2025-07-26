@@ -13,16 +13,17 @@ import transformations as tft
 # CONSTANTS #
 #############
 _RATE = 10 # (Hz) rate for rospy.rate
-_MAX_SPEED = 1.5 # (m/s)
+_MAX_SPEED = 3 # (m/s)
 _MAX_CLIMB_RATE = 1.0 # m/s
 _MAX_ROTATION_RATE = 5.0 # rad/s 
 IMAGE_HEIGHT = 960
 IMAGE_WIDTH = 1280
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
-EXTEND = 300 # Number of pixels forward to extrapolate the line
-KP_X = 0.8
-KP_Y = 0.8
-KP_Z_W = 0.8 # Proportional gains for x, y, and angular velocity control
+EXTEND = 200 # Number of pixels forward to extrapolate the line
+KP_X = 0.002  # pixel-to-m/s gain in x
+KP_Y = 0.002  # pixel-to-m/s gain in y
+KP_Z_W = 0.02  # rad-to-rad/s yaw gain
+
 DISPLAY = True
 
 #########################
@@ -193,6 +194,9 @@ class LineController(Node):
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
 
+        self.previous_line_dir = np.array([0.0, 1.0])  # Initialize pointing forward
+        self.direction_initialized = False
+
     def vehicle_local_position_callback(self, vehicle_local_position):
         """Callback function for vehicle_local_position topic subscriber."""
         self.vehicle_local_position = vehicle_local_position
@@ -297,49 +301,72 @@ class LineController(Node):
     
     def line_sub_cb(self, param):
         """
-        Callback function which is called when a new message of type Line is recieved by self.line_sub.
-        Notes:
-        - This is the function that maps a detected line into a velocity 
-        command
-            
-            Args:
-                - param: parameters that define the center and direction of detected line
+        Line following with direction consistency to prevent 180° flips
         """
         print("Following line")
+        
         # Extract line parameters
         x, y, vx, vy = param.x, param.y, param.vx, param.vy
         line_point = np.array([x, y])
         line_dir = np.array([vx, vy])
-        line_dir = line_dir / np.linalg.norm(line_dir)  # Ensure unit vector
+        
+        norm = np.linalg.norm(line_dir)
+        if norm < 0.1:
+            print("Warning: Line direction vector too small")
+            self.vx__dc = 0.0
+            self.vy__dc = 0.0
+            self.wz__dc = 0.0
+            self.publish_trajectory_setpoint(*self.convert_velocity_setpoints())
+            return
+        
+        line_dir = line_dir / norm
 
-        # Target point EXTEND pixels ahead along the line direction
+        # FIX DIRECTION AMBIGUITY
+        # Ensure line direction is consistent with previous direction
+        if self.direction_initialized:
+            # Check if current direction is more aligned with previous or its opposite
+            dot_current = np.dot(line_dir, self.previous_line_dir)
+            dot_opposite = np.dot(-line_dir, self.previous_line_dir)
+            
+            # If opposite direction is more aligned, flip the current direction
+            if dot_opposite > dot_current:
+                line_dir = -line_dir
+                print("Flipped line direction to maintain consistency")
+        else:
+            # For first detection, ensure line points generally forward (positive y)
+            if line_dir[1] < 0:
+                line_dir = -line_dir
+                print("Initial direction set to point forward")
+            self.direction_initialized = True
+        
+        # Update previous direction for next iteration
+        self.previous_line_dir = line_dir.copy()
+
+        # Rest of the control logic remains the same
         target = line_point + EXTEND * line_dir
-
-        # Error between center and target
         error = target - CENTER
 
-        # Set linear velocities (downward camera frame)
+        # Linear velocities
         self.vx__dc = KP_X * error[0]
         self.vy__dc = KP_Y * error[1]
 
-        # Get angle between y-axis and line direction
-        forward = np.array([0.0, 1.0])
-        angle = math.atan2(line_dir[1], line_dir[0])
-        angle_error = math.atan2(forward[1], forward[0]) - angle
-
-        # Set angular velocity (yaw)
+        # Calculate angle error
+        forward_camera = np.array([0.0, 1.0])
+        cross_product = line_dir[0] * forward_camera[1] - line_dir[1] * forward_camera[0]
+        dot_product = np.dot(line_dir, forward_camera)
+        angle_error = math.atan2(cross_product, dot_product)
+        
+        # Yaw control
         self.wz__dc = KP_Z_W * angle_error
+        
+        # Convert and publish
         self.publish_trajectory_setpoint(*self.convert_velocity_setpoints())
+        
+        # Debug output
+        self.get_logger().info(f"Dir: ({line_dir[0]:.3f},{line_dir[1]:.3f}) "
+                              f"Angle: {math.degrees(angle_error):.1f}° "
+                              f"Yaw: {self.wz__dc:.3f}")
 
-        """
-        TODO: Implement logic to set a target on the line given a point and tangent vector.
-        TODO: Find the error between the target and the center of the image.
-        TODO: Set linear velocity in the downward camera frame (self.vx__dc, self.vy__dc) based on the error. (hint: use KP_X and KP_Y)
-        TODO: Find the error between the forward direction of the drone and the line direction.
-        TODO: Set angular velocity in the downward camera frame (self.wz__dc) based on the error. (hint: use KP_Z_W)
-        TODO: Convert downward camera frame velocities to body down frame velocities (use self.convert_velocity_setpoints())
-        TODO: Publish the trajectory setpoint with the converted velocities (use self.publish_trajectory_setpoint)
-        """
 
 def main(args=None) -> None:
     print('Starting offboard control node...')
