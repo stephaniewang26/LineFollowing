@@ -7,7 +7,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
 from line_interfaces.msg import Line
-import transformations as tft
+import tf_transformations as tft
 
 #############
 # CONSTANTS #
@@ -98,7 +98,7 @@ class CoordTransforms():
             [0.0, -1.0, 0.0, 0.0], # bd.x = -dc.y
             [1.0, 0.0, 0.0, 0.0],  # bd.y = dc.x
             [0.0, 0.0, 1.0, 0.0],  # bd.z = dc.z
-            [0.0, 0.0, 0.0, 0.0]
+            [0.0, 0.0, 0.0, 1.0]
         ])
     
     
@@ -286,19 +286,32 @@ class LineController(Node):
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.vehicle_command_publisher.publish(msg)
 
+    def vehicle_attitude_callback(self, msg):
+        self.q_bd_lned = msg.q
+
+    def get_current_heading(self):
+        # msg.q = [w, x, y, z]
+        w, x, y, z = self.q_bd_lned
+        yaw = tft.euler_from_quaternion([x, y, z, w])[2]
+        return yaw
+
     def convert_velocity_setpoints(self):
         # Set linear velocity (convert command velocity from downward camera frame to bd frame)
-        vx, vy, vz = self.coord_transforms.static_transform((self.vx__dc, self.vy__dc, self.vz__dc), 'dc', 'bd')
+        vx_bd, vy_bd, vz_bd = self.coord_transforms.static_transform((self.vx__dc, self.vy__dc, self.vz__dc), 'dc', 'bd')
 
         # Set angular velocity (convert command angular velocity from downward camera to bd frame)
-        _, _, wz = self.coord_transforms.static_transform((0.0, 0.0, self.wz__dc), 'dc', 'bd')
+        _, _, wz_bd = self.coord_transforms.static_transform((0.0, 0.0, self.wz__dc), 'dc', 'bd')
+
+        yaw = self.get_current_heading()
+        vx =  vx_bd * math.cos(yaw) - vy_bd * math.sin(yaw)
+        vy =  vx_bd * math.sin(yaw) + vy_bd * math.cos(yaw)
 
         # enforce safe velocity limits
-        if _MAX_SPEED < 0.0 or _MAX_CLIMB_RATE < 0.0 or _MAX_ROTATION_RATE < 0.0:
-            raise Exception("_MAX_SPEED,_MAX_CLIMB_RATE, and _MAX_ROTATION_RATE must be positive")
+        # if _MAX_SPEED < 0.0 or _MAX_CLIMB_RATE < 0.0 or _MAX_ROTATION_RATE < 0.0:
+        #     raise Exception("_MAX_SPEED,_MAX_CLIMB_RATE, and _MAX_ROTATION_RATE must be positive")
         vx = min(max(vx,-_MAX_SPEED), _MAX_SPEED)
         vy = min(max(vy,-_MAX_SPEED), _MAX_SPEED)
-        wz = min(max(wz,-_MAX_ROTATION_RATE), _MAX_ROTATION_RATE)
+        wz = min(max(wz_bd,-_MAX_ROTATION_RATE), _MAX_ROTATION_RATE)
 
         return (vx, vy, wz)
     
