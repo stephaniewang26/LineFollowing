@@ -5,7 +5,7 @@ import math
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
+from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus, VehicleAttitude
 from line_interfaces.msg import Line
 import tf_transformations as tft
 
@@ -13,18 +13,21 @@ import tf_transformations as tft
 # CONSTANTS #
 #############
 _RATE = 10 # (Hz) rate for rospy.rate
-_MAX_SPEED = 3 # (m/s)
+_MAX_SPEED = 0.7 # (m/s)
 _MAX_CLIMB_RATE = 1.0 # m/s
-_MAX_ROTATION_RATE = 5.0 # rad/s 
-IMAGE_HEIGHT = 960
-IMAGE_WIDTH = 1280
+_MAX_ROTATION_RATE = 5.0 # rad/s
+IMAGE_HEIGHT = 576
+IMAGE_WIDTH = 768
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
-EXTEND = 200 # Number of pixels forward to extrapolate the line
-KP_X = 0.002  # pixel-to-m/s gain in x
-KP_Y = 0.002  # pixel-to-m/s gain in y
-KP_Z_W = 0.02  # rad-to-rad/s yaw gain
+EXTEND = 300 # Number of pixels forward to extrapolate the line
+KP_X = 0.002
+KP_Y = 0.002
+KP_Z_W = 0.02
 
 DISPLAY = True
+
+ENABLE_HORIZONTAL_VELOCITY = True
+MAX_CORRECTION_FACTOR = 10.0
 
 #########################
 # COORDINATE TRANSFORMS #
@@ -95,11 +98,47 @@ class CoordTransforms():
                                   }
        
         self.R_dc2bd = np.array([
-            [0.0, -1.0, 0.0, 0.0], # bd.x = -dc.y
-            [1.0, 0.0, 0.0, 0.0],  # bd.y = dc.x
-            [0.0, 0.0, 1.0, 0.0],  # bd.z = dc.z
+            [0.0, -1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0]
         ])
+
+        self.R_lenu2lenu = np.eye(4)
+        self.R_lned2lned = np.eye(4)
+        self.R_bu2bu = np.eye(4)
+        self.R_bd2bd = np.eye(4)
+        self.R_dc2dc = np.eye(4)
+        self.R_fc2fc = np.eye(4)
+
+        self.R_bd2dc = self.R_dc2bd.T
+
+        self.R_lenu2lned = np.array([
+            [0.0, 1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0]
+        ])
+
+        self.R_lned2lenu = self.R_lenu2lned.T
+
+        self.R_bu2bd = np.array([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0]
+        ])
+
+        self.R_bd2bu = self.R_bu2bd.T
+
+        self.R_bu2dc = np.dot(self.R_bu2bd, self.R_bd2dc)
+        self.R_bu2fc = np.eye(4)
+        self.R_bd2fc = np.dot(self.R_bd2bu, self.R_bu2fc)
+        self.R_dc2bu = self.R_bu2dc.T
+        self.R_dc2fc = np.dot(self.R_dc2bd, self.R_bd2fc)
+        self.R_fc2bu = self.R_bu2fc.T
+        self.R_fc2bd = self.R_bd2fc.T
+        self.R_fc2dc = self.R_dc2fc.T
     
     
     def static_transform(self, v__fin, fin, fout):
@@ -171,6 +210,8 @@ class LineController(Node):
             VehicleLocalPosition, '/fmu/out/vehicle_local_position', self.vehicle_local_position_callback, qos_profile)
         self.vehicle_status_subscriber = self.create_subscription(
             VehicleStatus, '/fmu/out/vehicle_status', self.vehicle_status_callback, qos_profile)
+        self.vehicle_attitude_subscriber = self.create_subscription(
+            VehicleAttitude, '/fmu/out/vehicle_attitude', self.vehicle_attitude_callback, qos_profile)
         self.line_sub = self.create_subscription(
             Line, '/line/param', self.line_sub_cb, 1)
 
@@ -188,14 +229,17 @@ class LineController(Node):
         # Yaw setpoint velocities in downward camera frame
         self.wz__dc = 0.0
 
-        # Quaternion representing the rotation of the drone's body frame in the NED frame. initiallize to identity quaternion
-        self.quat_bu_lenu = (0, 0, 0, 1)
+        self.q_bd_lned = np.array([1.0, 0.0, 0.0, 0.0])
+
+        self.previous_line_dir = np.array([0.0, 1.0])
+        self.direction_initialized = False
+
+        self._last_vx = 0.0
+        self._last_vy = 0.0
+        self._last_wz = 0.0
 
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
-
-        self.previous_line_dir = np.array([0.0, 1.0])  # Initialize pointing forward
-        self.direction_initialized = False
 
     def vehicle_local_position_callback(self, vehicle_local_position):
         """Callback function for vehicle_local_position topic subscriber."""
@@ -215,7 +259,6 @@ class LineController(Node):
         """Send a disarm command to the vehicle."""
         self.publish_vehicle_command(
             VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0)
-        self.publish_vehicle_command()
         self.get_logger().info('Disarm command sent')
 
     def engage_offboard_mode(self):
@@ -290,31 +333,66 @@ class LineController(Node):
         self.q_bd_lned = msg.q
 
     def get_current_heading(self):
-        # msg.q = [w, x, y, z]
-        w, x, y, z = self.q_bd_lned
-        yaw = tft.euler_from_quaternion([x, y, z, w])[2]
-        return yaw
+        try:
+            q = [
+                self.q_bd_lned[1],
+                self.q_bd_lned[2],
+                self.q_bd_lned[3],
+                self.q_bd_lned[0]
+            ]
+
+            euler = tft.euler_from_quaternion(q)
+            yaw = euler[2]
+
+            return yaw
+        except (AttributeError, IndexError):
+            return 0.0
 
     def convert_velocity_setpoints(self):
-        # Set linear velocity (convert command velocity from downward camera frame to bd frame)
-        vx_bd, vy_bd, vz_bd = self.coord_transforms.static_transform((self.vx__dc, self.vy__dc, self.vz__dc), 'dc', 'bd')
+        vx_bd, vy_bd, _ = self.coord_transforms.static_transform((self.vx__dc, self.vy__dc, self.vz__dc), 'dc', 'bd')
 
-        # Set angular velocity (convert command angular velocity from downward camera to bd frame)
         _, _, wz_bd = self.coord_transforms.static_transform((0.0, 0.0, self.wz__dc), 'dc', 'bd')
 
         yaw = self.get_current_heading()
         vx =  vx_bd * math.cos(yaw) - vy_bd * math.sin(yaw)
         vy =  vx_bd * math.sin(yaw) + vy_bd * math.cos(yaw)
 
-        # enforce safe velocity limits
-        # if _MAX_SPEED < 0.0 or _MAX_CLIMB_RATE < 0.0 or _MAX_ROTATION_RATE < 0.0:
-        #     raise Exception("_MAX_SPEED,_MAX_CLIMB_RATE, and _MAX_ROTATION_RATE must be positive")
         vx = min(max(vx,-_MAX_SPEED), _MAX_SPEED)
         vy = min(max(vy,-_MAX_SPEED), _MAX_SPEED)
         wz = min(max(wz_bd,-_MAX_ROTATION_RATE), _MAX_ROTATION_RATE)
 
         return (vx, vy, wz)
-    
+
+    def transform_and_publish_setpoints(self):
+        v__bd = self.coord_transforms.static_transform(
+            (self.vx__dc, self.vy__dc, self.vz__dc), 'dc', 'bd'
+        )
+        self.get_logger().info(f"DC frame commands: vx={self.vx__dc:.3f}, vy={self.vy__dc:.3f}, vz={self.vz__dc:.3f} | BD frame commands: vx={v__bd[0]:.3f}, vy={v__bd[1]:.3f}, vz={v__bd[2]:.3f}")
+
+        q_px4 = self.q_bd_lned
+        q_tf  = [q_px4[1], q_px4[2], q_px4[3], q_px4[0]]
+        _, _, yaw = tft.euler_from_quaternion(q_tf)
+
+        vx_ned =  v__bd[0]*np.cos(yaw) - v__bd[1]*np.sin(yaw)
+        vy_ned =  v__bd[0]*np.sin(yaw) + v__bd[1]*np.cos(yaw)
+
+        _, _, wz_bd = self.coord_transforms.static_transform(
+            (0.0, 0.0, self.wz__dc), 'dc', 'bd'
+        )
+        self.get_logger().info(f"BD frame commands: vx={v__bd[0]:.3f}, vy={v__bd[1]:.3f}, vz={v__bd[2]:.3f} | NED frame commands: vx={vx_ned:.3f}, vy={vy_ned:.3f} | Yaw rate BD: wz={wz_bd:.3f}")
+
+        velocity_magnitude = np.sqrt(vx_ned**2 + vy_ned**2)
+        if velocity_magnitude > _MAX_SPEED:
+            scale = _MAX_SPEED / velocity_magnitude
+            vx_ned *= scale
+            vy_ned *= scale
+
+        wz_bd = min(max(wz_bd, -_MAX_ROTATION_RATE), _MAX_ROTATION_RATE)
+
+        self._last_vx = vx_ned
+        self._last_vy = vy_ned
+        self._last_wz = wz_bd
+
     def timer_callback(self) -> None:
         """Callback function for the timer."""
 
@@ -332,72 +410,39 @@ class LineController(Node):
         self.offboard_setpoint_counter += 1
     
     def line_sub_cb(self, param):
-        """
-        Line following with direction consistency to prevent 180° flips
-        """
-        print("Following line")
-        
-        # Extract line parameters
+        self.get_logger().info("Received line parameters")
+
         x, y, vx, vy = param.x, param.y, param.vx, param.vy
-        line_point = np.array([x, y])
-        line_dir = np.array([vx, vy])
-        
-        norm = np.linalg.norm(line_dir)
-        if norm < 0.1:
-            print("Warning: Line direction vector too small")
-            self.vx__dc = 0.0
-            self.vy__dc = 0.0
-            self.wz__dc = 0.0
-            self._last_vx, self._last_vy, self._last_wz = self.convert_velocity_setpoints()
-            return
-        
-        line_dir = line_dir / norm
 
-        # FIX DIRECTION AMBIGUITY
-        # Ensure line direction is consistent with previous direction
-        if self.direction_initialized:
-            # Check if current direction is more aligned with previous or its opposite
-            dot_current = np.dot(line_dir, self.previous_line_dir)
-            dot_opposite = np.dot(-line_dir, self.previous_line_dir)
-            
-            # If opposite direction is more aligned, flip the current direction
-            if dot_opposite > dot_current:
-                line_dir = -line_dir
-                print("Flipped line direction to maintain consistency")
-        else:
-            # For first detection, ensure line points generally forward (positive y)
-            if line_dir[1] < 0:
-                line_dir = -line_dir
-                print("Initial direction set to point forward")
-            self.direction_initialized = True
-        
-        # Update previous direction for next iteration
-        self.previous_line_dir = line_dir.copy()
+        norm = np.sqrt(vx**2 + vy**2)
+        if norm > 0:
+            vx /= norm
+            vy /= norm
 
-        # Rest of the control logic remains the same
-        target = line_point + EXTEND * line_dir
-        error = target - CENTER
+        target_x = x + EXTEND * vx
+        target_y = y + EXTEND * vy
 
-        # Linear velocities
-        self.vx__dc = KP_X * error[0]
-        self.vy__dc = KP_Y * error[1]
+        error_x = target_x - CENTER[0]
+        error_y = target_y - CENTER[1]
 
-        # Calculate angle error
-        forward_camera = np.array([0.0, 1.0])
-        cross_product = line_dir[0] * forward_camera[1] - line_dir[1] * forward_camera[0]
-        dot_product = np.dot(line_dir, forward_camera)
-        angle_error = math.atan2(cross_product, dot_product)
-        
-        # Yaw control - increase gain if needed
-        self.wz__dc = KP_Z_W * angle_error
-        
-        # Convert and store for timer callback
-        self._last_vx, self._last_vy, self._last_wz = self.convert_velocity_setpoints()
-        
-        # Debug output
-        self.get_logger().info(f"Dir: ({line_dir[0]:.3f},{line_dir[1]:.3f}) "
-                              f"Angle: {math.degrees(angle_error):.1f}° "
-                              f"Yaw: {self.wz__dc:.3f} -> {self._last_wz:.3f}")
+        self.vx__dc = KP_X * error_x / 100.0
+
+        base_forward_speed = 0.5
+        y_correction = -KP_Y * error_y / 200.0
+        self.vy__dc = -(base_forward_speed + y_correction)
+
+        desired_heading = np.arctan2(vx, -vy)
+        angular_error = self.normalize_angle(desired_heading)
+        self.wz__dc = KP_Z_W * angular_error / 10.0
+
+        self.transform_and_publish_setpoints()
+
+    def normalize_angle(self, angle):
+        while angle > np.pi:
+            angle -= 2 * np.pi
+        while angle < -np.pi:
+            angle += 2 * np.pi
+        return angle
 
 
 def main(args=None) -> None:
