@@ -7,7 +7,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
 from line_interfaces.msg import Line
-import tf_transformations as tft
+import transformations as tft
 
 #############
 # CONSTANTS #
@@ -215,7 +215,6 @@ class LineController(Node):
         """Send a disarm command to the vehicle."""
         self.publish_vehicle_command(
             VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0)
-        self.publish_vehicle_command()
         self.get_logger().info('Disarm command sent')
 
     def engage_offboard_mode(self):
@@ -236,36 +235,23 @@ class LineController(Node):
         msg.velocity = True
         msg.acceleration = False
         msg.attitude = False
-        msg.body_rate = True  # CRITICAL: This must be True for yawspeed control
+        msg.body_rate = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.offboard_control_mode_publisher.publish(msg)
 
     def publish_trajectory_setpoint(self, vx: float, vy: float, wz: float) -> None:
         """Publish the trajectory setpoint."""
         msg = TrajectorySetpoint()
-        
-        # Position control for altitude
-        msg.position = [float('nan'), float('nan'), self.takeoff_height]
-        
-        # Velocity control for horizontal movement
+        msg.position = [None, None, self.takeoff_height]
         if self.offboard_setpoint_counter < 100:
             msg.velocity = [0.0, 0.0, 0.0]
         else:
             msg.velocity = [vx, vy, 0.0]
-
-        msg.yawspeed = wz  # Enable yaw control after initial hover
-        
-        # Set unused fields to NaN
-        msg.acceleration = [float('nan'), float('nan'), float('nan')]
-        msg.jerk = [float('nan'), float('nan'), float('nan')]
-        msg.yaw = float('nan')  # Use NaN since we're controlling yawspeed
-        
+        msg.acceleration = [None, None, None]
+        msg.yawspeed = wz
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
-        
-        # Debug yaw commands
-        if abs(wz) > 0.01:  # Only log when there's significant yaw command
-            self.get_logger().info(f"Publishing yawspeed: {wz:.3f} rad/s ({math.degrees(wz):.1f} deg/s)")
+        # self.get_logger().info(f"Publishing velocity setpoints {[vx, vy, wz]}")
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""
@@ -324,11 +310,6 @@ class LineController(Node):
             self.engage_offboard_mode()
             self.arm()
 
-        # Always publish setpoints to maintain offboard mode
-        if not hasattr(self, '_last_vx'):
-            self._last_vx, self._last_vy, self._last_wz = 0.0, 0.0, 0.0
-        
-        self.publish_trajectory_setpoint(self._last_vx, self._last_vy, self._last_wz)
         self.offboard_setpoint_counter += 1
     
     def line_sub_cb(self, param):
@@ -348,7 +329,7 @@ class LineController(Node):
             self.vx__dc = 0.0
             self.vy__dc = 0.0
             self.wz__dc = 0.0
-            self._last_vx, self._last_vy, self._last_wz = self.convert_velocity_setpoints()
+            self.publish_trajectory_setpoint(*self.convert_velocity_setpoints())
             return
         
         line_dir = line_dir / norm
@@ -388,16 +369,16 @@ class LineController(Node):
         dot_product = np.dot(line_dir, forward_camera)
         angle_error = math.atan2(cross_product, dot_product)
         
-        # Yaw control - increase gain if needed
+        # Yaw control
         self.wz__dc = KP_Z_W * angle_error
         
-        # Convert and store for timer callback
-        self._last_vx, self._last_vy, self._last_wz = self.convert_velocity_setpoints()
+        # Convert and publish
+        self.publish_trajectory_setpoint(*self.convert_velocity_setpoints())
         
         # Debug output
         self.get_logger().info(f"Dir: ({line_dir[0]:.3f},{line_dir[1]:.3f}) "
                               f"Angle: {math.degrees(angle_error):.1f}° "
-                              f"Yaw: {self.wz__dc:.3f} -> {self._last_wz:.3f}")
+                              f"Yaw: {self.wz__dc:.3f}")
 
 
 def main(args=None) -> None:
