@@ -7,7 +7,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus, VehicleAttitude
 from line_interfaces.msg import Line
-import transformations as tft
+import tf_transformations as tft
 
 #############
 # CONSTANTS #
@@ -284,18 +284,26 @@ class LineController(Node):
         self.offboard_control_mode_publisher.publish(msg)
 
     def publish_trajectory_setpoint(self, vx: float, vy: float, wz: float) -> None:
-        """Publish the trajectory setpoint."""
         msg = TrajectorySetpoint()
-        msg.position = [None, None, self.takeoff_height]
+
+        msg.position = [float('nan'), float('nan'), self.takeoff_height]
+
         if self.offboard_setpoint_counter < 100:
             msg.velocity = [0.0, 0.0, 0.0]
         else:
             msg.velocity = [vx, vy, 0.0]
-        msg.acceleration = [None, None, None]
+
         msg.yawspeed = wz
+
+        msg.acceleration = [float('nan'), float('nan'), float('nan')]
+        msg.jerk = [float('nan'), float('nan'), float('nan')]
+        msg.yaw = float('nan')
+
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
-        # self.get_logger().info(f"Publishing velocity setpoints {[vx, vy, wz]}")
+
+        if abs(wz) > 0.01:
+            self.get_logger().info(f"Publishing yawspeed: {wz:.3f} rad/s ({math.degrees(wz):.1f} deg/s)")
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""
@@ -381,14 +389,16 @@ class LineController(Node):
         self._last_wz = wz_bd
 
     def timer_callback(self) -> None:
-        """Callback function for the timer."""
-
         self.publish_offboard_control_heartbeat_signal()
-        
+
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
             self.arm()
 
+        if not hasattr(self, '_last_vx'):
+            self._last_vx, self._last_vy, self._last_wz = 0.0, 0.0, 0.0
+
+        self.publish_trajectory_setpoint(self._last_vx, self._last_vy, self._last_wz)
         self.offboard_setpoint_counter += 1
     
     def line_sub_cb(self, param):
