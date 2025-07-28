@@ -273,9 +273,8 @@ class LineController(Node):
         self.get_logger().info("Switching to land mode")
 
     def publish_offboard_control_heartbeat_signal(self):
-        """Publish the offboard control mode."""
         msg = OffboardControlMode()
-        msg.position = True
+        msg.position = False
         msg.velocity = True
         msg.acceleration = False
         msg.attitude = False
@@ -286,7 +285,7 @@ class LineController(Node):
     def publish_trajectory_setpoint(self, vx: float, vy: float, wz: float) -> None:
         msg = TrajectorySetpoint()
 
-        msg.position = [float('nan'), float('nan'), self.takeoff_height]
+        msg.position = [float('nan'), float('nan'), float('nan')]
 
         if self.offboard_setpoint_counter < 100:
             msg.velocity = [0.0, 0.0, 0.0]
