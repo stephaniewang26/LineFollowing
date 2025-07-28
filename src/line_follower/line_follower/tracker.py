@@ -7,7 +7,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus, VehicleAttitude
 from line_interfaces.msg import Line
-import tf_transformations as tft
+import transformations as tft
 
 #############
 # CONSTANTS #
@@ -279,36 +279,23 @@ class LineController(Node):
         msg.velocity = True
         msg.acceleration = False
         msg.attitude = False
-        msg.body_rate = True  # CRITICAL: This must be True for yawspeed control
+        msg.body_rate = True
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.offboard_control_mode_publisher.publish(msg)
 
     def publish_trajectory_setpoint(self, vx: float, vy: float, wz: float) -> None:
         """Publish the trajectory setpoint."""
         msg = TrajectorySetpoint()
-        
-        # Position control for altitude
-        msg.position = [float('nan'), float('nan'), self.takeoff_height]
-        
-        # Velocity control for horizontal movement
+        msg.position = [None, None, self.takeoff_height]
         if self.offboard_setpoint_counter < 100:
             msg.velocity = [0.0, 0.0, 0.0]
         else:
             msg.velocity = [vx, vy, 0.0]
-
-        msg.yawspeed = wz  # Enable yaw control after initial hover
-        
-        # Set unused fields to NaN
-        msg.acceleration = [float('nan'), float('nan'), float('nan')]
-        msg.jerk = [float('nan'), float('nan'), float('nan')]
-        msg.yaw = float('nan')  # Use NaN since we're controlling yawspeed
-        
+        msg.acceleration = [None, None, None]
+        msg.yawspeed = wz
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
-        
-        # Debug yaw commands
-        if abs(wz) > 0.01:  # Only log when there's significant yaw command
-            self.get_logger().info(f"Publishing yawspeed: {wz:.3f} rad/s ({math.degrees(wz):.1f} deg/s)")
+        # self.get_logger().info(f"Publishing velocity setpoints {[vx, vy, wz]}")
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""
@@ -402,11 +389,6 @@ class LineController(Node):
             self.engage_offboard_mode()
             self.arm()
 
-        # Always publish setpoints to maintain offboard mode
-        if not hasattr(self, '_last_vx'):
-            self._last_vx, self._last_vy, self._last_wz = 0.0, 0.0, 0.0
-        
-        self.publish_trajectory_setpoint(self._last_vx, self._last_vy, self._last_wz)
         self.offboard_setpoint_counter += 1
     
     def line_sub_cb(self, param):
