@@ -14,14 +14,14 @@ import tf_transformations as tft
 #############
 _RATE = 10 # (Hz) rate for rospy.rate
 _MAX_SPEED = 0.7 # (m/s)
-_MAX_CLIMB_RATE = 1.0 # m/s
+_MAX_CLIMB_RATE = 0.3 # m/s
 _MAX_ROTATION_RATE = 5.0 # rad/s
 IMAGE_HEIGHT = 576
 IMAGE_WIDTH = 768
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
 EXTEND = 300 # Number of pixels forward to extrapolate the line
-KP_X = 0.015
-KP_Y = 0.015
+KP_X = 0.03
+KP_Y = 0.03
 KP_Z_W = 0.03
 
 DISPLAY = True
@@ -98,7 +98,7 @@ class CoordTransforms():
             [0.0, -1.0, 0.0, 0.0], # bd.x = -dc.y
             [1.0, 0.0, 0.0, 0.0],  # bd.y = dc.x
             [0.0, 0.0, 1.0, 0.0],  # bd.z = dc.z
-            [0.0, 0.0, 0.0, 0.0]
+            [0.0, 0.0, 0.0, 1.0]
         ])
 
     
@@ -183,7 +183,7 @@ class LineController(Node):
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
         self.vehicle_attitude = VehicleAttitude()
-        self.takeoff_height = -3.0
+        self.takeoff_height = -1.0
 
         # Linear setpoint velocities in downward camera frame
         self.vx__dc = 0.0
@@ -199,8 +199,7 @@ class LineController(Node):
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
 
-
-        self.x_error = 0.0
+        self.prev_line_dir = None
 
     def body_to_world_velocity(self, vx_bd, vy_bd, yaw_rad):
         vx_world = vx_bd * math.cos(yaw_rad) - vy_bd * math.sin(yaw_rad)
@@ -280,7 +279,7 @@ class LineController(Node):
             msg.velocity = [0.0, 0.0, 0.0]
         else:
             yaw_rad = self.current_yaw  # make sure you have this from vehicle attitude
-            vx, vy = self.body_to_world_velocity(vx_bd=vx, vy_bd=vy, yaw_rad=yaw_rad)
+            vx, vy = self.body_to_world_velocity(vx_bd=vx, vy_bd=0.0, yaw_rad=yaw_rad)
             msg.velocity = [vx, vy, 0.0]
         
         msg.acceleration = [float('nan'), float('nan'), float('nan')]
@@ -355,6 +354,10 @@ class LineController(Node):
         line_dir = np.array([vx, vy])
         line_dir = line_dir / np.linalg.norm(line_dir)  # Ensure unit vector
 
+        if self.prev_line_dir is not None and np.dot(line_dir, self.prev_line_dir) < 0:
+            line_dir = -line_dir
+        self.prev_line_dir = line_dir
+
         # Target point EXTEND pixels ahead along the line direction
         target = line_point + EXTEND * line_dir
 
@@ -364,16 +367,26 @@ class LineController(Node):
         # Set linear velocities (downward camera frame)
         self.vx__dc = KP_X * error[0]
         self.vy__dc = KP_Y * error[1]
+        
 
-        self.x_error = error[0]
 
         # Get angle between y-axis and line direction
         forward = np.array([0.0, 1.0])
         angle = math.atan2(line_dir[1], line_dir[0])
         angle_error = math.atan2(forward[1], forward[0]) - angle
 
+        if abs(angle_error) > .1:
+            self.vx__dc = 0.0
+            self.vy__dc = 0.0
+            if (angle_error < 1.57 and angle_error > 0) or angle_error < -1.57:
+                self.wz__dc = -0.3
+            elif (angle_error > -1.57 and angle_error < 0) or angle_error > 1.57:
+                self.wz__dc = 0.3
+
+        self.get_logger().info(f"Angle {angle}")
+        self.get_logger().info(f"Angle error {angle_error}")
         # Set angular velocity (yaw)
-        self.wz__dc = KP_Z_W * angle_error
+        # self.wz__dc = KP_Z_W * angle_error
         # print("X error", error[0])
         # print("Angle error", angle_error)
 
