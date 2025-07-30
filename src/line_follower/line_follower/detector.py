@@ -24,16 +24,23 @@ KERNEL = np.ones((5, 5), np.uint8)
 DISPLAY = True
 
 # Constants from your tracker
-EXTEND = 400
+EXTEND = 350
 
 class LineDetector(Node):
     def __init__(self):
         super().__init__('detector')
 
         # A subscriber to the topic '/aero_downward_camera/image'
+        # self.camera_sub = self.create_subscription(
+        #     Image,
+        #     '/world/line_following_track/model/x500_mono_cam_down_0/link/camera_link/sensor/imager/image',
+        #     self.camera_sub_cb,
+        #     10
+        # )
+
         self.camera_sub = self.create_subscription(
             Image,
-            '/world/line_following_track/model/x500_mono_cam_down_0/link/camera_link/sensor/imager/image',
+            'camera_0/image_raw/compressed',
             self.camera_sub_cb,
             10
         )
@@ -73,7 +80,10 @@ class LineDetector(Node):
             msg = Line()
             msg.x, msg.y, msg.vx, msg.vy = float(line[0]), float(line[1]), float(line[2]), float(line[3])
             # Publish param msg
-            self.param_pub.publish(msg)
+        else: 
+            msg.x, msg.y, msg.vx, msg.vy = 0.0, 0.0, 0.0, 0.0
+        self.param_pub.publish(msg)
+
 
         # Publish annotated image with enhanced visualization
         if DISPLAY and line is not None:
