@@ -17,14 +17,14 @@ import math
 #############
 # CONSTANTS #
 #############
-LOW = 0  # Lower image thresholding bound
+LOW = 200  # Lower image thresholding bound
 HI = 255   # Upper image thresholding bound
 LENGTH_THRESH = 0  # If the length of the largest contour is less than LENGTH_THRESH, we will not consider it a line
 KERNEL = np.ones((5, 5), np.uint8)
 DISPLAY = True
 
 # Constants from your tracker
-EXTEND = 300
+EXTEND = 400
 
 class LineDetector(Node):
     def __init__(self):

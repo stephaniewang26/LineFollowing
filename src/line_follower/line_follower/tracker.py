@@ -19,10 +19,10 @@ _MAX_ROTATION_RATE = 5.0 # rad/s
 IMAGE_HEIGHT = 576
 IMAGE_WIDTH = 768
 CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
-EXTEND = 300 # Number of pixels forward to extrapolate the line
-KP_X = 0.1
-KP_Y = 0.1
-KP_Z_W = 0.03
+EXTEND = 400 # Number of pixels forward to extrapolate the line
+KP_X = 0.05
+KP_Y = 0.05
+KP_Z_W = 0.1
 
 DISPLAY = True
 
@@ -368,23 +368,21 @@ class LineController(Node):
         # Set linear velocities (downward camera frame)
         self.vx__dc = KP_X * error[0]
         self.vy__dc = KP_Y * error[1]
-        
 
 
         # Get angle between y-axis and line direction
         forward = np.array([0.0, 1.0])
         angle = math.atan2(line_dir[1], line_dir[0])
-        angle_error = math.atan2(forward[1], forward[0]) - angle
+        raw_angle_error = math.atan2(forward[1], forward[0]) - angle 
+        angle_error = (raw_angle_error + math.pi) % (2*math.pi) - math.pi
         
-        # if abs(angle_error) > .1:
-
-        if angle_error > 3.14 or angle_error < 0:
-            self.wz__dc = 0.2 * (angle_error - 1.57)
-        elif angle_error < 3.14:
-            self.wz__dc = -0.2 * (angle_error - 1.57)
+            
+        self.wz__dc = -1 * KP_Z_W * angle_error
+       
         if abs(angle_error) > .5:
             self.vx__dc = 0.0
             self.vy__dc = 0.0
+        
        
         self.get_logger().info(f"Angle {angle}")
         self.get_logger().info(f"Angle error {angle_error}")
