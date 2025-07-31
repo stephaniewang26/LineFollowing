@@ -5,7 +5,7 @@ import math
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from px4_msgs.msg import VehicleAttitude, OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
+from px4_msgs.msg import DistanceSensor, VehicleAttitude, OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
 from line_interfaces.msg import Line
 import tf_transformations as tft
 
@@ -13,8 +13,8 @@ import tf_transformations as tft
 # CONSTANTS #
 #############
 _RATE = 10 # (Hz) rate for rospy.rate
-_MAX_SPEED = 0.7 # (m/s)
-_MAX_CLIMB_RATE = 0.3 # m/s
+_MAX_SPEED = 0.1 # (m/s)
+_MAX_CLIMB_RATE = 0.2 # m/s
 _MAX_ROTATION_RATE = 5.0 # rad/s
 IMAGE_HEIGHT = 576
 IMAGE_WIDTH = 768
@@ -22,7 +22,7 @@ CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame
 EXTEND = 400 # Number of pixels forward to extrapolate the line
 KP_X = 0.005
 KP_Y = 0.005
-KP_Z_W = 0.05
+KP_Z_W = 0.2
 
 DISPLAY = True
 
@@ -183,7 +183,7 @@ class LineController(Node):
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
         self.vehicle_attitude = VehicleAttitude()
-        self.takeoff_height = -1.0
+        self.takeoff_height = -0.3
 
         # Linear setpoint velocities in downward camera frame
         self.vx__dc = 0.0
@@ -288,6 +288,7 @@ class LineController(Node):
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
 
         self.trajectory_setpoint_publisher.publish(msg)
+        self.get_logger().info(f"Current z pos {msg.position[2]}")
         self.get_logger().info(f"Publishing velocity setpoints {[vx, vy, wz]}")
         self.get_logger().info(f"Current yaw {self.current_yaw}")
         
@@ -353,11 +354,12 @@ class LineController(Node):
         x, y, vx, vy = param.x, param.y, param.vx, param.vy
         line_point = np.array([x, y])
         line_dir = np.array([vx, vy])
-        line_dir = line_dir / np.linalg.norm(line_dir)  # Ensure unit vector
+        if np.array_equal(line_dir, [0.0, 0.0]) == False:
+            line_dir = line_dir / np.linalg.norm(line_dir)  # Ensure unit vector
 
-        if self.prev_line_dir is not None and np.dot(line_dir, self.prev_line_dir) < 0:
-            line_dir = -line_dir
-        self.prev_line_dir = line_dir
+        # if self.prev_line_dir is not None and np.dot(line_dir, self.prev_line_dir) < 0:
+        #     line_dir = -line_dir
+        # self.prev_line_dir = line_dir
 
         # Target point EXTEND pixels ahead along the line direction
         target = line_point + EXTEND * line_dir

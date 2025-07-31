@@ -22,9 +22,46 @@ HI = 255   # Upper image thresholding bound
 LENGTH_THRESH = 0  # If the length of the largest contour is less than LENGTH_THRESH, we will not consider it a line
 KERNEL = np.ones((5, 5), np.uint8)
 DISPLAY = True
+HEADING = 1.57
 
 # Constants from your tracker
 EXTEND = 350
+
+def detect_white_strict(img):
+   """Detect white pixels with strict thresholds"""
+   lower_white = np.array([250, 250, 250])
+   upper_white = np.array([255, 255, 255])
+   mask = cv2.inRange(img, lower_white, upper_white)
+   return mask, np.sum(mask > 0) > 100
+
+def detect_white_relaxed(img):
+   """Detect white pixels with relaxed thresholds"""
+   lower_white = np.array([200, 200, 200])
+   upper_white = np.array([255, 255, 255])
+   mask = cv2.inRange(img, lower_white, upper_white)
+   return mask, np.sum(mask > 0) > 100
+
+def detect_brightest_pixels(img):
+   """Detect the brightest pixels in the image"""
+   gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+   threshold = np.percentile(gray, 90)  # Top 10% brightest pixels
+   _, mask = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
+   return mask, np.sum(mask > 0) > 100
+
+def detect_adaptive_threshold(img):
+   """Use adaptive thresholding"""
+   gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+   mask = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 21, 10)
+   return mask, np.sum(mask > 0) > 100
+
+def detect_color_edges(img):
+   """Detect edges and assume they might be lines"""
+   gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+   edges = cv2.Canny(gray, 50, 150)
+   # Dilate edges to make them thicker
+   kernel = np.ones((3, 3), np.uint8)
+   mask = cv2.dilate(edges, kernel, iterations=2)
+   return mask, np.sum(mask > 0) > 100
 
 class LineDetector(Node):
     def __init__(self):
@@ -40,7 +77,7 @@ class LineDetector(Node):
 
         # self.camera_sub = self.create_subscription(
         #     Image,
-        #     'camera_0/image_raw/compressed',
+        #     '/camera_0/image_raw',
         #     self.camera_sub_cb,
         #     10
         # )
@@ -68,11 +105,12 @@ class LineDetector(Node):
                 - msg = ROS Image message
         """
         # Convert Image msg to OpenCV image
-        image = self.bridge.imgmsg_to_cv2(msg, "mono8")
-        self.latest_image = image.copy()
+        image_color = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+       
+        self.latest_image = image_color.copy()
 
         # Detect line in the image. detect returns a parameterize the line (if one exists)
-        line = self.detect_line(image)
+        line = self.detect_line(image_color)
         self.latest_line = line
 
         msg = Line()
@@ -83,7 +121,7 @@ class LineDetector(Node):
             # Publish param msg
         else: 
             msg.x, msg.y, msg.vx, msg.vy = 0.0, 0.0, 0.0, 0.0
-        self.param_pub.publish(msg)
+        self.param_pub.publish(msg) 
 
 
         # Publish annotated image with enhanced visualization
@@ -92,14 +130,13 @@ class LineDetector(Node):
 
     def publish_annotated_image(self):
         """Create and publish an annotated image with line detection and tracking visualization"""
+        gray = cv2.cvtColor(self.latest_image, cv2.COLOR_BGR2GRAY)
         if self.latest_image is None or self.latest_line is None:
             return
-            
-        # Convert to color image
-        annotated = cv2.cvtColor(self.latest_image, cv2.COLOR_GRAY2BGR)
         
+        annotated = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         # Get actual image dimensions
-        image_height, image_width = self.latest_image.shape
+        image_height, image_width, _ = self.latest_image.shape
         center_x = image_width // 2
         center_y = image_height // 2
         
@@ -181,6 +218,8 @@ class LineDetector(Node):
     ##########
     # DETECT #
     ##########
+
+    
     def detect_line(self, image):
         """ 
         Given an image, fit a line to biggest contour if it meets size requirements (otherwise return None)
@@ -198,28 +237,80 @@ class LineDetector(Node):
         TODO: Retrieve x, y pixel coordinates and vx, vy collinear vector from the detected line (look at cv2.fitLine)
         TODO: Populate the Line custom message and publish it to the topic '/line/param'
         '''
-        #dilate
-        imgray = image.copy()
-        imgray = cv2.dilate(imgray,KERNEL,iterations = 1)
+        
+        
+        # Try multiple detection strategies
+        detection_methods = [
+            ("white_strict", lambda: detect_white_strict(image)),
+            ("white_relaxed", lambda: detect_white_relaxed(image)),
+            ("brightest_pixels", lambda: detect_brightest_pixels(image)),
+            ("adaptive_threshold", lambda: detect_adaptive_threshold(image)),
+            ("color_edges", lambda: detect_color_edges(image))
+        ]
+        
+        for method_name, method_func in detection_methods:
+            try:
+                binary, valid = method_func()
+                white_pixels = np.sum(binary > 0)
+                self.get_logger().info(f"{white_pixels}")
+                if valid:
+                    break
+            except Exception as e:
+                self.get_logger().info(f"{e}")
+                continue
+        else:
+            self.get_logger().info("No valid line detected")
+            return None
 
-        #binary threshold and find contours
-        ret, thresh = cv2.threshold(imgray, LOW, HI, cv2.THRESH_BINARY)
-        contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
+        # Find contours in the binary image
+        contours, hierarchy = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
         if not contours:
-            print("No contours found")
+            self.get_logger().info("No contours found")
             return None
-
-        max_contour = max(contours, key=lambda c: max(cv2.boundingRect(c)[2:4]))
-
-        if max(cv2.boundingRect(max_contour)[2:4]) < LENGTH_THRESH:
-            print("Largest contour too small")
+        
+        # Find the largest contour
+        max_contour = max(contours, key=cv2.contourArea)
+        
+        # Check if contour is large enough
+        if cv2.contourArea(max_contour) < 0:  # Minimum area threshold
+            self.get_logger().info("Largest contour too small")
             return None
-
-        [vx,vy,x,y] = cv2.fitLine(max_contour, cv2.DIST_L2,0,0.01,0.01)
-
+        
+        # Fit line to the largest contour
+        [vx,vy,x,y] = cv2.fitLine(max_contour, cv2.DIST_L2, 0, 0.01, 0.01)
+        
+        # Debug: Print original fitted line
+        # self.get_logger().info(f"Original fitted line: vx={vx[0]:.3f}, vy={vy[0]:.3f}")
+        
+        # Ensure the line vector points in the direction closest to HEADING
+        # Convert HEADING to direction vector (accounting for OpenCV's inverted y-axis)
+        target_vx = np.cos(HEADING)
+        target_vy = np.sin(HEADING) 
+        
+        # self.get_logger().info(f"Target direction: vx={target_vx:.3f}, vy={target_vy:.3f}")
+        
+        # Calculate dot product to determine if we need to flip the vector
+        dot_product = vx[0] * target_vx + vy[0] * target_vy
+        
+        # If dot product is negative, flip the direction vector
+        if dot_product < 0:
+            vx = -vx
+            vy = -vy
+            self.get_logger().info("Flipped vector direction")
+        else:
+            self.get_logger().info("Kept original vector direction")
+        
+        # Normalize the vector to ensure consistent magnitude
+        magnitude = np.sqrt(vx[0]**2 + vy[0]**2)
+        if magnitude > 0:
+            vx = vx / magnitude
+            vy = vy / magnitude
+        
+        # print(f"Final line vector: vx={vx[0]:.3f}, vy={vy[0]:.3f}")
+        
+        
         return (x, y, vx, vy)
-
 
 def main(args=None):
     rclpy.init(args=args)
