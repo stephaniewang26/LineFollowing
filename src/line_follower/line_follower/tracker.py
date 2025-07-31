@@ -22,7 +22,7 @@ CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame
 EXTEND = 400 # Number of pixels forward to extrapolate the line
 KP_X = 0.005
 KP_Y = 0.005
-KP_Z_W = 0.1
+KP_Z_W = 0.05
 
 DISPLAY = True
 

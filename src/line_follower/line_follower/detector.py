@@ -31,19 +31,19 @@ class LineDetector(Node):
         super().__init__('detector')
 
         # A subscriber to the topic '/aero_downward_camera/image'
-        # self.camera_sub = self.create_subscription(
-        #     Image,
-        #     '/world/line_following_track/model/x500_mono_cam_down_0/link/camera_link/sensor/imager/image',
-        #     self.camera_sub_cb,
-        #     10
-        # )
-
         self.camera_sub = self.create_subscription(
             Image,
-            'camera_0/image_raw/compressed',
+            '/world/line_following_track/model/x500_mono_cam_down_0/link/camera_link/sensor/imager/image',
             self.camera_sub_cb,
             10
         )
+
+        # self.camera_sub = self.create_subscription(
+        #     Image,
+        #     'camera_0/image_raw/compressed',
+        #     self.camera_sub_cb,
+        #     10
+        # )
 
         # A publisher which will publish a parametrization of the detected line to the topic '/line/param'
         self.param_pub = self.create_publisher(Line, '/line/param', 1)
@@ -75,9 +75,10 @@ class LineDetector(Node):
         line = self.detect_line(image)
         self.latest_line = line
 
+        msg = Line()
+
         # If a line was detected, publish the parameterization to the topic '/line/param'
         if line is not None:
-            msg = Line()
             msg.x, msg.y, msg.vx, msg.vy = float(line[0]), float(line[1]), float(line[2]), float(line[3])
             # Publish param msg
         else: 
