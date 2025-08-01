@@ -13,16 +13,16 @@ import tf_transformations as tft
 # CONSTANTS #
 #############
 _RATE = 10 # (Hz) rate for rospy.rate
-_MAX_SPEED = 0.1 # (m/s)
+_MAX_SPEED = 0.05 # (m/s)
 _MAX_CLIMB_RATE = 0.2 # m/s
 _MAX_ROTATION_RATE = 5.0 # rad/s
 IMAGE_HEIGHT = 576
 IMAGE_WIDTH = 768
-CENTER = np.array([IMAGE_WIDTH//2, IMAGE_HEIGHT//2]) # Center of the image frame. We will treat this as the center of mass of the drone
+CENTER = np.array([640, 480]) # Center of the image frame. We will treat this as the center of mass of the drone
 EXTEND = 400 # Number of pixels forward to extrapolate the line
-KP_X = 0.005
-KP_Y = 0.005
-KP_Z_W = 0.2
+KP_X = 0.003
+KP_Y = 0.003
+KP_Z_W = 0.1
 
 DISPLAY = True
 
@@ -356,10 +356,37 @@ class LineController(Node):
         line_dir = np.array([vx, vy])
         if np.array_equal(line_dir, [0.0, 0.0]) == False:
             line_dir = line_dir / np.linalg.norm(line_dir)  # Ensure unit vector
+        
 
-        # if self.prev_line_dir is not None and np.dot(line_dir, self.prev_line_dir) < 0:
-        #     line_dir = -line_dir
-        # self.prev_line_dir = line_dir
+        # 2) vector from the stripe to the camera centre
+        c = CENTER - line_point                  	# centre → stripe   (still in px)
+
+        # 3) **perpendicular component**  (cross-track miss distance)
+        #	c⊥ = c − (c·d) d
+        c_perp = c - np.dot(c, line_dir) * line_dir   	# in pixels
+
+        # ----- after reading vx, vy ---------------------------------
+        line_dir = np.array([vx, vy], dtype=float)
+
+
+        # treat anything whose norm is < 1 × 10-6 as “bad / zero”
+        if np.linalg.norm(line_dir) < 1e-6:
+            self.get_logger().warn("fitLine produced a zero-length direction, skipping frame")
+            self.vx__dc = 0.0
+            self.vy__dc = 0.0
+            self.wz__dc = 0.0
+            self.publish_trajectory_setpoint(*self.convert_velocity_setpoints())
+            return
+
+
+
+        # otherwise normalise
+        line_dir /= np.linalg.norm(line_dir)
+
+
+
+
+
 
         # Target point EXTEND pixels ahead along the line direction
         target = line_point + EXTEND * line_dir
@@ -367,9 +394,12 @@ class LineController(Node):
         # Error between center and target
         error = target - CENTER
 
+      
+
         # Set linear velocities (downward camera frame)
         self.vx__dc = KP_X * error[0]
         self.vy__dc = KP_Y * error[1]
+       
 
 
         # Get angle between y-axis and line direction
@@ -384,6 +414,13 @@ class LineController(Node):
         if abs(angle_error) > .5:
             self.vx__dc = 0.0
             self.vy__dc = 0.0
+        center_dist = math.sqrt((c_perp[0] ** 2 + c_perp[1] ** 2)) 
+        self.get_logger().info(f"center dist {center_dist}")
+        self.get_logger().info(f"perp vector {c_perp[0]}, {c_perp[1]}")
+        if center_dist > 50:
+            self.vx__dc = KP_X * c_perp[0] * -1
+            self.vy__dc = KP_Y * c_perp[1] * -1
+            self.get_logger().info("MOVING TO CENTER")
         
        
         self.get_logger().info(f"Angle {angle}")

@@ -139,6 +139,7 @@ class LineDetector(Node):
         image_height, image_width, _ = self.latest_image.shape
         center_x = image_width // 2
         center_y = image_height // 2
+        self.get_logger().info(f"CENTER {center_x}, {center_y}")
         
         x, y, vx, vy = self.latest_line
         
@@ -180,6 +181,28 @@ class LineDetector(Node):
                 (center_x, center_y), 
                 (int(target_x), int(target_y)), 
                 (255, 255, 0), 2)  # Cyan line
+        centre 	= np.array([float(center_x), float(center_y)])
+        c      	= centre - line_point
+        t_along	= np.dot(c, line_dir)           	# scalar
+        proj_pt	= line_point + t_along * line_dir   # (x,y) of projection
+
+
+        # ----- 2. draw the perpendicular (cross-track) segment -------------
+        cv2.line(annotated,
+                (center_x, center_y),             	# image centre
+                (int(proj_pt[0]), int(proj_pt[1])),   # projection
+                (255,   0, 255), 2)               	# magenta line
+
+
+        cv2.circle(annotated,                      	# mark projection point
+                (int(proj_pt[0]), int(proj_pt[1])),
+                4, (255,   0, 255), -1)
+
+
+
+
+
+
         
         # Add text annotations
         cv2.putText(annotated, f'Image Size: {image_width}x{image_height}', 
