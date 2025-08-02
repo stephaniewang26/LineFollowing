@@ -357,36 +357,10 @@ class LineController(Node):
         if np.array_equal(line_dir, [0.0, 0.0]) == False:
             line_dir = line_dir / np.linalg.norm(line_dir)  # Ensure unit vector
         
-
-        # 2) vector from the stripe to the camera centre
-        c = CENTER - line_point                  	# centre → stripe   (still in px)
-
-        # 3) **perpendicular component**  (cross-track miss distance)
-        #	c⊥ = c − (c·d) d
-        c_perp = c - np.dot(c, line_dir) * line_dir   	# in pixels
-
-        # ----- after reading vx, vy ---------------------------------
-        line_dir = np.array([vx, vy], dtype=float)
-
-
-        # treat anything whose norm is < 1 × 10-6 as “bad / zero”
-        if np.linalg.norm(line_dir) < 1e-6:
-            self.get_logger().warn("fitLine produced a zero-length direction, skipping frame")
-            self.vx__dc = 0.0
-            self.vy__dc = 0.0
-            self.wz__dc = 0.0
-            self.publish_trajectory_setpoint(*self.convert_velocity_setpoints())
-            return
-
-
-
-        # otherwise normalise
-        line_dir /= np.linalg.norm(line_dir)
-
-
-
-
-
+        forward = np.array([0.0, -1.0])
+        if vy > 0:
+            line_dir *= -1
+            self.get_logger().info("flipped line")
 
         # Target point EXTEND pixels ahead along the line direction
         target = line_point + EXTEND * line_dir
@@ -394,16 +368,11 @@ class LineController(Node):
         # Error between center and target
         error = target - CENTER
 
-      
-
         # Set linear velocities (downward camera frame)
         self.vx__dc = KP_X * error[0]
         self.vy__dc = KP_Y * error[1]
        
-
-
         # Get angle between y-axis and line direction
-        forward = np.array([0.0, 1.0])
         angle = math.atan2(line_dir[1], line_dir[0])
         raw_angle_error = math.atan2(forward[1], forward[0]) - angle 
         angle_error = (raw_angle_error + math.pi) % (2*math.pi) - math.pi
@@ -414,12 +383,18 @@ class LineController(Node):
         if abs(angle_error) > .5:
             self.vx__dc = 0.0
             self.vy__dc = 0.0
-        center_dist = math.sqrt((c_perp[0] ** 2 + c_perp[1] ** 2)) 
-        self.get_logger().info(f"center dist {center_dist}")
-        self.get_logger().info(f"perp vector {c_perp[0]}, {c_perp[1]}")
-        if center_dist > 50:
-            self.vx__dc = KP_X * c_perp[0] * -1
-            self.vy__dc = KP_Y * c_perp[1] * -1
+        
+
+        #---perp from line and pt
+        m = vy / vx
+        p_dist = abs((m * (target[0] - CENTER[0])) - m - (target[1] - CENTER[1]) + 1) / math.sqrt(m**2 + 1)
+
+        self.get_logger().info(f"p dist {p_dist}")
+
+        if p_dist > 30:
+            self.vx__dc = KP_X * (p_dist / math.sqrt(m**2 + 1)) 
+            self.vy__dc = KP_Y * ((-1 * m * p_dist) / math.sqrt(m**2 + 1)) 
+          
             self.get_logger().info("MOVING TO CENTER")
         
        

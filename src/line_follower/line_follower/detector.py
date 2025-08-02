@@ -182,10 +182,11 @@ class LineDetector(Node):
                 (int(target_x), int(target_y)), 
                 (255, 255, 0), 2)  # Cyan line
         centre 	= np.array([float(center_x), float(center_y)])
+        self.get_logger().info(f"center from detector {centre}")
         c      	= centre - line_point
         t_along	= np.dot(c, line_dir)           	# scalar
         proj_pt	= line_point + t_along * line_dir   # (x,y) of projection
-
+        self.get_logger().info(f"cdist from detector {math.sqrt(proj_pt[1]**2 + proj_pt[0]**2)}")
 
         # ----- 2. draw the perpendicular (cross-track) segment -------------
         cv2.line(annotated,
@@ -314,15 +315,15 @@ class LineDetector(Node):
         # self.get_logger().info(f"Target direction: vx={target_vx:.3f}, vy={target_vy:.3f}")
         
         # Calculate dot product to determine if we need to flip the vector
-        dot_product = vx[0] * target_vx + vy[0] * target_vy
+        # dot_product = vx[0] * target_vx + vy[0] * target_vy
         
-        # If dot product is negative, flip the direction vector
-        if dot_product < 0:
-            vx = -vx
-            vy = -vy
-            self.get_logger().info("Flipped vector direction")
-        else:
-            self.get_logger().info("Kept original vector direction")
+        # # If dot product is negative, flip the direction vector
+        # if dot_product < 0:
+        #     vx = -vx
+        #     vy = -vy
+        #     self.get_logger().info("Flipped vector direction")
+        # else:
+        #     self.get_logger().info("Kept original vector direction")
         
         # Normalize the vector to ensure consistent magnitude
         magnitude = np.sqrt(vx[0]**2 + vy[0]**2)
