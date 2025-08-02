@@ -77,7 +77,7 @@ class LineDetector(Node):
 
         # self.camera_sub = self.create_subscription(
         #     Image,
-        #     '/camera_0/image_raw',
+        #     '/camera_1/image_raw',
         #     self.camera_sub_cb,
         #     10
         # )

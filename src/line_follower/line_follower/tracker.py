@@ -223,7 +223,7 @@ class LineController(Node):
         
         # Extract yaw (rotation around z-axis)
         # euler_angles returns (roll, pitch, yaw)
-        self.current_yaw = euler_angles[2]
+        
         
         # Store quaternion for potential future use (convert to your notation)
         # Your code uses (x, y, z, w) format
@@ -232,6 +232,8 @@ class LineController(Node):
     def vehicle_local_position_callback(self, vehicle_local_position):
         """Callback function for vehicle_local_position topic subscriber."""
         self.vehicle_local_position = vehicle_local_position
+
+        self.current_yaw = self.vehicle_local_position.heading
 
     def vehicle_status_callback(self, vehicle_status):
         """Callback function for vehicle_status topic subscriber."""
